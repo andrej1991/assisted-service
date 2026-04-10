@@ -22,6 +22,9 @@ import (
 type StubDefinition struct {
 	Request  *RequestDefinition  `json:"request"`
 	Response *ResponseDefinition `json:"response"`
+	// Priority is WireMock match precedence: lower values match first (default is 5 when omitted).
+	// Non-2xx AMS overrides must win over success stubs accumulated from suite init / AfterEach.
+	Priority int `json:"priority,omitempty"`
 }
 
 type RequestDefinition struct {
@@ -265,7 +268,7 @@ func (w *WireMock) CreateStubsForCreatingAMSSubscription(resStatus int) error {
 	}
 
 	amsSubscriptionStub := w.CreateStubDefinition(ClusterAuthzPath, "POST", string(reqBody), string(resBody), resStatus)
-	_, err = w.AddStub(amsSubscriptionStub)
+	_, err = w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 	return err
 }
 
@@ -283,7 +286,7 @@ func (w *WireMock) CreateStubsForGettingAMSSubscription(resStatus int, status st
 	}
 
 	amsSubscriptionStub := w.CreateStubDefinition(subscriptionPath, "GET", "", string(resBody), resStatus)
-	_, err = w.AddStub(amsSubscriptionStub)
+	_, err = w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 	return err
 }
 
@@ -320,7 +323,7 @@ func (w *WireMock) CreateStubsForUpdatingAMSSubscription(resStatus int, updateTy
 		}
 
 		amsSubscriptionStub := w.CreateStubDefinition(subscriptionPath, "PATCH", string(reqBody), string(resBody), resStatus)
-		_, err = w.AddStub(amsSubscriptionStub)
+		_, err = w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 		return err
 
 	case SubscriptionUpdateConsoleUrl:
@@ -352,7 +355,7 @@ func (w *WireMock) CreateStubsForUpdatingAMSSubscription(resStatus int, updateTy
 		}
 
 		amsSubscriptionStub := w.CreateStubDefinition(subscriptionPath, "PATCH", string(reqBody), string(resBody), resStatus)
-		_, err = w.AddStub(amsSubscriptionStub)
+		_, err = w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 		return err
 
 	case SubscriptionUpdateOpenshiftClusterID:
@@ -384,7 +387,7 @@ func (w *WireMock) CreateStubsForUpdatingAMSSubscription(resStatus int, updateTy
 		}
 
 		amsSubscriptionStub := w.CreateStubDefinition(subscriptionPath, "PATCH", string(reqBody), string(resBody), resStatus)
-		_, err = w.AddStub(amsSubscriptionStub)
+		_, err = w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 		return err
 
 	case SubscriptionUpdateStatusActive:
@@ -416,7 +419,7 @@ func (w *WireMock) CreateStubsForUpdatingAMSSubscription(resStatus int, updateTy
 		}
 
 		amsSubscriptionStub := w.CreateStubDefinition(subscriptionPath, "PATCH", string(reqBody), string(resBody), resStatus)
-		_, err = w.AddStub(amsSubscriptionStub)
+		_, err = w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 		return err
 
 	default:
@@ -428,7 +431,7 @@ func (w *WireMock) CreateStubsForUpdatingAMSSubscription(resStatus int, updateTy
 func (w *WireMock) CreateStubsForDeletingAMSSubscription(resStatus int) error {
 
 	amsSubscriptionStub := w.CreateStubDefinition(subscriptionPath, "DELETE", "", "", resStatus)
-	_, err := w.AddStub(amsSubscriptionStub)
+	_, err := w.addStubMaybePrioritized(amsSubscriptionStub, resStatus)
 	return err
 }
 
@@ -817,6 +820,16 @@ func (w *WireMock) CreateStubDefinition(url, method, reqBody, resBody string, re
 		}
 	}
 	return sd
+}
+
+// wiremockOverridePriority is used for error-path stubs so they match before default HTTP 200 mappings.
+const wiremockOverridePriority = 1
+
+func (w *WireMock) addStubMaybePrioritized(stub *StubDefinition, resStatus int) (string, error) {
+	if resStatus != http.StatusOK {
+		stub.Priority = wiremockOverridePriority
+	}
+	return w.AddStub(stub)
 }
 
 func (w *WireMock) AddStub(stub *StubDefinition) (string, error) {
